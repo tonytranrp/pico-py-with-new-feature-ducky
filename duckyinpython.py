@@ -69,14 +69,14 @@ def sendString(line):
 def parseLine(line):
     global defaultDelay
     commands = {
-        "REM": lambda line: None,
-        "DELAY": lambda line: time.sleep(float(line[6:])/1000),
-        "STRING": lambda line: sendString(line[7:]),
-        "PRINT": lambda line: print("[SCRIPT]: " + line[6:]),
-        "IMPORT": lambda line: runScript(line[7:]),
-        "DEFAULT_DELAY": lambda line: setattr(defaultDelay, int(line[14:]) * 10),
-        "DEFAULTDELAY": lambda line: setattr(defaultDelay, int(line[13:]) * 10),
-        "LED": lambda line: setattr(led, not led.value)
+        "#": lambda line: None,
+        "Delay": lambda line: time.sleep(float(line[6:])/1000),
+        "String": lambda line: sendString(line[7:]),
+        "Print": lambda line: print("[Script]: " + line[6:]),
+        "Import": lambda line: runScript(line[7:]),
+        "Default_Delay": lambda line: setattr(defaultDelay, int(line[14:]) * 10),
+        "Defaultdelay": lambda line: setattr(defaultDelay, int(line[13:]) * 10),
+        "Led": lambda line: setattr(led, not led.value)
     }
     
     for command, action in commands.items():
@@ -86,87 +86,52 @@ def parseLine(line):
 
     newScriptLine = convertLine(line)
     runScriptLine(newScriptLine)
+# Initialize keyboard and layout
 kbd = Keyboard(usb_hid.devices)
 layout = KeyboardLayout(kbd)
 
-#init button
-button1_pin = DigitalInOut(GP22) # defaults to input
-button1_pin.pull = Pull.UP      # turn on internal pull-up resistor
-button1 =  Debouncer(button1_pin)
+# Initialize button
+button1_pin = DigitalInOut(GP22)
+button1_pin.switch_to_input(pull=Pull.UP)
+button1 = Debouncer(button1_pin)
 
-#init payload selection switch
-payload1Pin = digitalio.DigitalInOut(GP4)
-payload1Pin.switch_to_input(pull=digitalio.Pull.UP)
-payload2Pin = digitalio.DigitalInOut(GP5)
-payload2Pin.switch_to_input(pull=digitalio.Pull.UP)
-payload3Pin = digitalio.DigitalInOut(GP10)
-payload3Pin.switch_to_input(pull=digitalio.Pull.UP)
-payload4Pin = digitalio.DigitalInOut(GP11)
-payload4Pin.switch_to_input(pull=digitalio.Pull.UP)
+# Initialize payload selection switches
+payload_pins = [GP4, GP5, GP10, GP11]
+payload_files = ["payload.txt", "payload2.txt", "payload3.txt", "payload4.txt"]
+
+payload_pin_states = [not DigitalInOut(pin).value for pin in payload_pins]
+selected_payload_index = payload_pin_states.index(True) if True in payload_pin_states else 0
 
 def getProgrammingStatus():
     # check GP0 for setup mode
-    # see setup mode for instructions
     progStatusPin = digitalio.DigitalInOut(GP0)
     progStatusPin.switch_to_input(pull=digitalio.Pull.UP)
     progStatus = not progStatusPin.value
-    return(progStatus)
-
+    return progStatus
 
 defaultDelay = 0
 
 def runScript(file):
     global defaultDelay
-
     duckyScriptPath = file
     try:
-        f = open(duckyScriptPath,"r",encoding='utf-8')
-        previousLine = ""
-        for line in f:
-            line = line.rstrip()
-            if(line[0:6] == "REPEAT"):
-                for i in range(int(line[7:])):
-                    #repeat the last command
-                    parseLine(previousLine)
-                    time.sleep(float(defaultDelay)/1000)
-            else:
-                parseLine(line)
-                previousLine = line
-            time.sleep(float(defaultDelay)/1000)
+        with open(duckyScriptPath, "r", encoding='utf-8') as f:
+            previousLine = ""
+            for line in f:
+                line = line.rstrip()
+                if line.startswith("REPEAT"):
+                    for _ in range(int(line[7:])):
+                        parseLine(previousLine)
+                        time.sleep(defaultDelay / 1000)
+                else:
+                    parseLine(line)
+                    previousLine = line
+                time.sleep(defaultDelay / 1000)
     except OSError as e:
         print("Unable to open file ", file)
 
 def selectPayload():
-    global payload1Pin, payload2Pin, payload3Pin, payload4Pin
-    payload = "payload.txt"
-    # check switch status
-    # payload1 = GPIO4 to GND
-    # payload2 = GPIO5 to GND
-    # payload3 = GPIO10 to GND
-    # payload4 = GPIO11 to GND
-    payload1State = not payload1Pin.value
-    payload2State = not payload2Pin.value
-    payload3State = not payload3Pin.value
-    payload4State = not payload4Pin.value
-
-    if(payload1State == True):
-        payload = "payload.txt"
-
-    elif(payload2State == True):
-        payload = "payload2.txt"
-
-    elif(payload3State == True):
-        payload = "payload3.txt"
-
-    elif(payload4State == True):
-        payload = "payload4.txt"
-
-    else:
-        # if all pins are high, then no switch is present
-        # default to payload1
-        payload = "payload.txt"
-
-    return payload
+    return payload_files[selected_payload_index]
 
 async def blink_led(led):
     print("Blink")
